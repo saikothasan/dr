@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure AI Chat</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Marked for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .typing-dot {
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* Markdown Styles within chat bubbles */
+        .prose pre { margin: 0.5em 0; padding: 0.8em; border-radius: 0.5em; background: #1e293b; overflow-x: auto; }
+        .prose code { font-family: 'Courier New', monospace; font-size: 0.9em; }
+        .prose p { margin-bottom: 0.5em; }
+        .prose p:last-child { margin-bottom: 0; }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col font-sans text-gray-800">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center shadow-sm z-10">
+        <div class="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+        </div>
+        <h1 class="text-xl font-semibold text-gray-800">Azure AI Assistant</h1>
+        <div class="ml-auto text-sm text-gray-500" id="status-indicator">● Ready</div>
+    </header>
+
+    <!-- Chat Container -->
+    <main id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-6 sm:p-6 scroll-smooth">
+        <!-- Initial Welcome Message -->
+        <div class="flex items-start gap-4 max-w-3xl mx-auto">
+            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <span class="text-blue-600 text-xs font-bold">AI</span>
+            </div>
+            <div class="flex flex-col gap-1 w-full max-w-[85%]">
+                <div class="bg-white border border-gray-200 p-4 rounded-2xl rounded-tl-none shadow-sm prose max-w-none">
+                    <p>Hello! I am your AI assistant running on Azure App Service. How can I help you today?</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Input Area -->
+    <div class="bg-white border-t border-gray-200 p-4">
+        <div class="max-w-3xl mx-auto relative">
+            <form id="chat-form" class="flex items-end gap-2 bg-gray-50 border border-gray-300 rounded-xl p-2 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all shadow-sm">
+                <textarea 
+                    id="user-input" 
+                    rows="1" 
+                    class="flex-1 bg-transparent border-none focus:ring-0 resize-none p-2 max-h-32 text-gray-700"
+                    placeholder="Type your message..."
+                    oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
+                ></textarea>
+                <button 
+                    type="submit" 
+                    id="send-btn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg p-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
+            </form>
+            <div class="text-center text-xs text-gray-400 mt-2">
+                AI can make mistakes. Consider checking important information.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const statusIndicator = document.getElementById('status-indicator');
+
+        let messageHistory = [];
+
+        // Configure Marked.js
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: true
+        });
+
+        // Auto-resize textarea
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                chatForm.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        function addMessage(role, content) {
+            const isUser = role === 'user';
+            const div = document.createElement('div');
+            div.className = `flex items-start gap-4 max-w-3xl mx-auto ${isUser ? 'flex-row-reverse' : ''}`;
+            
+            const avatar = isUser 
+                ? `<div class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0 text-white text-xs">You</div>`
+                : `<div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0"><span class="text-blue-600 text-xs font-bold">AI</span></div>`;
+
+            const bubbleClass = isUser 
+                ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none shadow-md' 
+                : 'bg-white border border-gray-200 rounded-2xl rounded-tl-none shadow-sm prose max-w-none text-gray-800';
+
+            // For AI, we create a container that we can update during streaming
+            const contentHtml = isUser ? `<div class="whitespace-pre-wrap">${content}</div>` : `<div class="ai-content"></div>`;
+
+            div.innerHTML = `
+                ${avatar}
+                <div class="flex flex-col gap-1 w-full max-w-[85%]">
+                    <div class="${bubbleClass} p-4 text-sm leading-relaxed">
+                        ${contentHtml}
+                    </div>
+                </div>
+            `;
+
+            chatContainer.appendChild(div);
+            scrollToBottom();
+            
+            // If AI, return the content div for streaming updates
+            return isUser ? null : div.querySelector('.ai-content');
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // UI Updates
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            sendBtn.disabled = true;
+            statusIndicator.innerText = '● Thinking...';
+            statusIndicator.classList.add('text-blue-500');
+
+            // Add User Message
+            addMessage('user', message);
+            messageHistory.push({ role: 'user', content: message });
+
+            // Add AI Placeholder
+            const aiContentDiv = addMessage('assistant', '');
+            let accumulatedResponse = '';
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: messageHistory })
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                // Read the stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') break;
+                            
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.content) {
+                                    accumulatedResponse += parsed.content;
+                                    // Update UI with rendered Markdown
+                                    aiContentDiv.innerHTML = marked.parse(accumulatedResponse);
+                                    // Re-run highlight.js on new blocks
+                                    aiContentDiv.querySelectorAll('pre code').forEach((block) => {
+                                        hljs.highlightElement(block);
+                                    });
+                                    scrollToBottom();
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE:', e);
+                            }
+                        }
+                    }
+                }
+
+                messageHistory.push({ role: 'assistant', content: accumulatedResponse });
+
+            } catch (error) {
+                aiContentDiv.innerHTML = `<span class="text-red-500">Error: Could not connect to the AI server.</span>`;
+            } finally {
+                sendBtn.disabled = false;
+                statusIndicator.innerText = '● Ready';
+                statusIndicator.classList.remove('text-blue-500');
+            }
+        });
+    </script>
+</body>
+</html>
